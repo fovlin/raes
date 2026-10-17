@@ -19,9 +19,10 @@ type RaesEncrypter struct {
 }
 
 type CipherTextBlock struct {
-	Size uint32
-	Nonce []byte
-	Data []byte
+	NonceSize uint32
+	Nonce     []byte
+	DataSize  uint32
+	Data      []byte
 }
 
 var (

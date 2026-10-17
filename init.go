@@ -18,7 +18,7 @@ func initProgram() error {
 	if len(args) > 1 {
 		subCmdArgs = args[1:]
 	}
-	
+
 	args = flag.Args()
 
 	return nil
