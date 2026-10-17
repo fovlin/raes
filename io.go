@@ -7,6 +7,7 @@ import (
 	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/x509"
+	"encoding/binary"
 	"encoding/pem"
 	"fmt"
 	"io"
@@ -149,6 +150,9 @@ func (encrypter RaesEncrypter) Encrypt(input io.Reader, output io.Writer) error 
 		}
 
 		cipherTextBlock := aead.Seal(nil, nonce, plainText[:readSize], nil)
+
+		Size := make([]byte, 4)
+		binary.BigEndian.AppendUint32(Size, uint32(readSize))
 
 		_, err = output.Write(cipherTextBlock)
 		if err != nil {

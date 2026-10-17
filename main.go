@@ -18,6 +18,12 @@ type RaesEncrypter struct {
 	NonceSize    int
 }
 
+type CipherTextBlock struct {
+	Size uint32
+	Nonce []byte
+	Data []byte
+}
+
 var (
 	cmdMap = map[string]func() error{
 		"gen-key": genKey,
