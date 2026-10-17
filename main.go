@@ -5,34 +5,43 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
-	"flag"
 	"fmt"
 	"log"
 	"os"
 	"path"
 )
 
+type RaesEncrypter struct {
+	AesKey       []byte
+	RsaPublicKey *rsa.PublicKey
+	BlockSize    int
+	NonceSize    int
+}
+
 var (
 	cmdMap = map[string]func() error{
-		"gen-key": createKey,
+		"gen-key": genKey,
 		"enc":     enc,
 	}
 
-	args           []string
-	algorithm      string
-	privateKeyPath string
-	publicKeyPath  string
+	args              []string
+	subCmdArgs        []string
+	privateKeyPath    string
+	publicKeyPath     string
 	privateKeyPathArg string
 	publicKeyPathArg  string
-	privatekeyName string = "raes_key"
-	publicKeyName  string = "raes_key.pub"
-	keySize        int    = 4096
-	keyType        string = "PRIVATE KEY"
-	keyDirName            = ".raes"
+	privatekeyName    string = "raes_key"
+	publicKeyName     string = "raes_key.pub"
+	keySize           int    = 4096
+	keyType           string = "PRIVATE KEY"
+	keyDirName               = ".raes"
 )
 
 func main() {
-	parseFlag()
+	err := initProgram()
+	if err != nil {
+		log.Fatalln(err)
+	}
 
 	if len(args) < 1 {
 		log.Fatalln("command missing")
@@ -45,67 +54,82 @@ func main() {
 		log.Fatalln("unknown command:", cmd)
 	}
 
-	err := function()
+	err = function()
 	if err != nil {
 		log.Fatalln(err)
 	}
 }
 
-func parseFlag() {
-	flag.StringVar(&keyType, "t", keyType, "key type")
-	flag.IntVar(&keySize, "s", keySize, "key size")
-	flag.StringVar(&privateKeyPathArg, "d", privateKeyPathArg, "public key file")
-	flag.StringVar(&publicKeyPathArg, "k", publicKeyPathArg, "private key file")
-	flag.Parse()
-
-	args = flag.Args()
-}
-
 func enc() error {
+	if len(subCmdArgs) < 1 {
+		return fmt.Errorf("usage: raes enc <input> [output]")
+	}
+
+	var inputPath string = subCmdArgs[0]
+	var outputPath string = inputPath + ".enc"
+
+	if len(subCmdArgs) > 1 {
+		outputPath = subCmdArgs[1]
+	}
+
+	rsaPublicKey, err := loadPublicKey()
+	if err != nil {
+		return fmt.Errorf("load public key: %w", err)
+	}
+
+	aesKey := make([]byte, 32)
+	_, err = rand.Reader.Read(aesKey)
+	if err != nil {
+		return fmt.Errorf("create aes key: %w", err)
+	}
+
+	input, err := os.Open(inputPath)
+	if err != nil {
+		return fmt.Errorf("open input file: %w", err)
+	}
+
+	output, err := os.Open(outputPath)
+	if err != nil {
+		return fmt.Errorf("open input file: %w", err)
+	}
+
+	raesEncrypter := newRaesEncrypter(rsaPublicKey, aesKey)
+	raesEncrypter.Encrypt(input, output)
+
+	defer input.Close()
+	defer output.Close()
 
 	return nil
 }
 
-func createKey() error {
-	homeDirPath, err := os.UserHomeDir()
-	if err != nil {
-		return fmt.Errorf("load user directory: %w", err)
-	}
+func genKey() error {
+	_, err := os.Stat(privateKeyPath)
+	switch true {
+	case os.IsNotExist(err):
+		err := createAngSaveKey()
+		if err != nil {
+			return fmt.Errorf("create key: %w", err)
+		}
 
-	keyDir := path.Join(homeDirPath, keyDirName)
+	case !os.IsNotExist(err):
+		privateKey, err := loadPrivateKey()
+		if err != nil {
+			return fmt.Errorf("load private key: %w", err)
+		}
 
-	err = initDir(keyDir)
-	if err != nil {
-		return fmt.Errorf("init directory: %w", err)
-	}
+		pemBlock := pem.Block{
+			Bytes: x509.MarshalPKCS1PublicKey(&privateKey.PublicKey),
+			Type:  keyType,
+		}
 
-	privateKeyPath = path.Join(keyDir, privatekeyName)
-	publicKeyPath = path.Join(keyDir, publicKeyName)
-
-	_, err = os.Stat(privateKeyPath)
-	if !os.IsNotExist(err) {
-		return fmt.Errorf("private key already existed")
-	}
-
-	privateKeyData, publicKeyData, err := createNewKey(keySize, keyType)
-	if err != nil {
-		return fmt.Errorf("create new key: %v", err)
-	}
-
-	err = os.WriteFile(privateKeyPath, privateKeyData, 0600)
-	if err != nil {
-		return fmt.Errorf("create private key file: %v", err)
-	}
-
-	err = os.WriteFile(publicKeyPath, publicKeyData, 0600)
-	if err != nil {
-		return fmt.Errorf("create public key file: %v", err)
+		initDir(path.Dir(publicKeyPath))
+		os.WriteFile(publicKeyPath, pem.EncodeToMemory(&pemBlock), 0600)
 	}
 
 	return nil
 }
 
-func createNewKey(keySize int, keyType string) ([]byte, []byte, error) {
+func createKey(keySize int, keyType string) ([]byte, []byte, error) {
 	privateKey, err := rsa.GenerateKey(rand.Reader, keySize)
 	if err != nil {
 		return nil, nil, fmt.Errorf("generate rsa key: %w", err)
