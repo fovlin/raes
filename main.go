@@ -168,7 +168,7 @@ func genKey() error {
 		if err != nil {
 			return fmt.Errorf("save public key: %w", err)
 		}
-		
+
 		fmt.Println("regenerated public key:", publicKeyPath)
 	}
 

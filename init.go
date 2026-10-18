@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"strings"
 )
 
 func initProgram() error {
@@ -68,4 +69,33 @@ func initValue() error {
 	publicKeyPath = path.Join(path.Dir(privateKeyPath), publicKeyName)
 
 	return nil
+}
+
+
+func addSubfixBeforeExt(outputPath string) (string, error) {
+	resultPath := outputPath
+
+	for number := 1; number > 0; number++ {
+		_, err := os.Stat(resultPath)
+
+		switch true {
+		case os.IsNotExist(err):
+			return resultPath, nil
+
+		case err != nil:
+			return "", err
+		}
+
+		resultPath = outputPath
+
+		dir := path.Dir(resultPath)
+		basePath := path.Base(resultPath)
+		ext := path.Ext(basePath)
+		pureName, _ := strings.CutSuffix(basePath, ext)
+		pureName += fmt.Sprint("-", number)
+
+		resultPath = path.Join(dir, fmt.Sprint(pureName, ext))
+	}
+
+	return resultPath, nil
 }
