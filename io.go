@@ -7,6 +7,7 @@ import (
 	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/x509"
+	"encoding/binary"
 	"encoding/pem"
 	"fmt"
 	"io"
@@ -120,11 +121,19 @@ func addSubfixBeforeExt(outputPath string) (string, error) {
 
 func (cipherBlock CipherTextBlock) Write(writer io.Writer) (int, error) {
 	var blockData []byte
+	var blockSizeData []byte
 
-	blockData = append(blockData, cipherBlock.BlockSizeData...)
 	blockData = append(blockData, cipherBlock.NonceSizeData...)
 	blockData = append(blockData, cipherBlock.Nonce...)
 	blockData = append(blockData, cipherBlock.CipherText...)
+
+	blockSize := nonceSize + uint32(len(blockData))
+	binary.BigEndian.PutUint32(blockSizeData, blockSize)
+
+	_, err := writer.Write(blockSizeData)
+	if err != nil {
+		return 0, fmt.Errorf("write block size data: %w", err)
+	}
 
 	return writer.Write(blockData)
 }

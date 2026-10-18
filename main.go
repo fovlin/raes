@@ -19,7 +19,6 @@ type RaesEncrypter struct {
 }
 
 type CipherTextBlock struct {
-	BlockSizeData []byte
 	NonceSizeData []byte
 	Nonce         []byte
 	CipherText    []byte
