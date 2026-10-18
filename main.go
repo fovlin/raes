@@ -19,10 +19,10 @@ type RaesEncrypter struct {
 }
 
 type CipherTextBlock struct {
-	NonceSize uint32
-	Nonce     []byte
-	DataSize  uint32
-	Data      []byte
+	BlockSizeData []byte
+	NonceSizeData []byte
+	Nonce         []byte
+	CipherText    []byte
 }
 
 var (
@@ -31,17 +31,26 @@ var (
 		"enc":     enc,
 	}
 
-	args              []string
-	subCmdArgs        []string
-	privateKeyPath    string
-	publicKeyPath     string
+	args       []string
+	subCmdArgs []string
+
 	privateKeyPathArg string
 	publicKeyPathArg  string
-	privatekeyName    string = "raes_key"
-	publicKeyName     string = "raes_key.pub"
-	keySize           int    = 4096
-	keyType           string = "PRIVATE KEY"
-	keyDirName               = ".raes"
+
+	privatekeyName string = "raes_key"
+	publicKeyName  string = "raes_key.pub"
+	privateKeyPath string
+	publicKeyPath  string
+
+	keyType    string = "PRIVATE KEY"
+	keyDirName        = ".raes"
+
+	rsaKeySize int    = 4096
+	nonceSize  uint32 = 12
+	aesKeySize int    = 256 / 8
+
+	nonceSizeDataSize uint32 = 4
+	blockSizeDataSize uint32 = 4
 )
 
 func main() {
@@ -84,7 +93,7 @@ func enc() error {
 		return fmt.Errorf("load public key: %w", err)
 	}
 
-	aesKey := make([]byte, 32)
+	aesKey := make([]byte, aesKeySize)
 	_, err = rand.Reader.Read(aesKey)
 	if err != nil {
 		return fmt.Errorf("create aes key: %w", err)
@@ -95,7 +104,7 @@ func enc() error {
 		return fmt.Errorf("open input file: %w", err)
 	}
 
-	output, err := os.Open(outputPath)
+	output, err := os.Create(outputPath)
 	if err != nil {
 		return fmt.Errorf("open input file: %w", err)
 	}

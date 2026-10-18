@@ -7,7 +7,6 @@ import (
 	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/x509"
-	"encoding/binary"
 	"encoding/pem"
 	"fmt"
 	"io"
@@ -73,7 +72,7 @@ func loadPrivateKey() (*rsa.PrivateKey, error) {
 }
 
 func createAngSaveKey() error {
-	privateKeyData, publicKeyData, err := createKey(keySize, keyType)
+	privateKeyData, publicKeyData, err := createKey(rsaKeySize, keyType)
 	if err != nil {
 		return fmt.Errorf("create new key: %v", err)
 	}
@@ -119,6 +118,17 @@ func addSubfixBeforeExt(outputPath string) (string, error) {
 	return resultPath, nil
 }
 
+func (cipherBlock CipherTextBlock) Write(writer io.Writer) (int, error) {
+	var blockData []byte
+
+	blockData = append(blockData, cipherBlock.BlockSizeData...)
+	blockData = append(blockData, cipherBlock.NonceSizeData...)
+	blockData = append(blockData, cipherBlock.Nonce...)
+	blockData = append(blockData, cipherBlock.CipherText...)
+
+	return writer.Write(blockData)
+}
+
 func (encrypter RaesEncrypter) Encrypt(input io.Reader, output io.Writer) error {
 	aesKeyCipher, err := rsa.EncryptOAEP(sha256.New(), rand.Reader, encrypter.RsaPublicKey, encrypter.AesKey, nil)
 	if err != nil {
@@ -135,13 +145,6 @@ func (encrypter RaesEncrypter) Encrypt(input io.Reader, output io.Writer) error 
 
 	var plainText []byte = make([]byte, encrypter.BlockSize)
 	for {
-		var nonce []byte = make([]byte, encrypter.NonceSize)
-
-		_, err := rand.Reader.Read(nonce)
-		if err != nil {
-			return fmt.Errorf("create nonce: %w", err)
-		}
-
 		readSize, err := input.Read(plainText)
 		if err == io.EOF {
 			break
@@ -149,14 +152,14 @@ func (encrypter RaesEncrypter) Encrypt(input io.Reader, output io.Writer) error 
 			return fmt.Errorf("read plaintext data: %w", err)
 		}
 
-		cipherTextBlock := aead.Seal(nil, nonce, plainText[:readSize], nil)
-
-		Size := make([]byte, 4)
-		binary.BigEndian.AppendUint32(Size, uint32(readSize))
-
-		_, err = output.Write(cipherTextBlock)
+		cipherBlock, err := blockCrypt(aead, plainText[:readSize])
 		if err != nil {
-			return fmt.Errorf("write ciphertext data: %w", err)
+			return fmt.Errorf("encrypt data: %w", err)
+		}
+
+		_, err = cipherBlock.Write(output)
+		if err != nil {
+			return fmt.Errorf("write cipher block: %w", err)
 		}
 	}
 	return nil
