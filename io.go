@@ -116,38 +116,33 @@ func addSubfixBeforeExt(outputPath string) (string, error) {
 }
 
 func (encrypter RaesEncrypter) Write(plainText []byte) (int, error) {
-	var blockData []byte
-	var blockSizeData = make([]byte, blockSizeDataSize)
+	var cipherDataBlock []byte
+	var blockSizeData = make([]byte, aesBlockSizeDataSize)
 
 	cipherBlock, err := createAESCipherBlock(encrypter.AEAD, plainText)
 	if err != nil {
 		return 0, fmt.Errorf("encrypt data: %w", err)
 	}
 
-	blockData = append(blockData, cipherBlock.NonceSizeData...)
-	blockData = append(blockData, cipherBlock.Nonce...)
-	blockData = append(blockData, cipherBlock.CipherText...)
+	cipherDataBlock = append(cipherDataBlock, cipherBlock.Nonce...)
+	cipherDataBlock = append(cipherDataBlock, cipherBlock.CipherText...)
 
-	blockSize := uint32(len(blockData))
+	blockSize := uint32(len(cipherDataBlock))
 	binary.BigEndian.PutUint32(blockSizeData, blockSize)
 
-	fmt.Println(blockSize)
-	_, err = encrypter.Writer.Write(blockSizeData)
-	if err != nil {
-		return 0, fmt.Errorf("write block size data: %w", err)
-	}
-
-	return encrypter.Writer.Write(blockData)
+	return encrypter.Writer.Write(cipherDataBlock)
 }
 
-func (encrypter RaesEncrypter) Encrypt(input io.Reader) error {
-	var plainText []byte = make([]byte, encrypter.BlockSize)
+func (encrypter RaesEncrypter) Encrypt() error {
+	var plainText []byte = make([]byte, encrypter.AESCipherSize)
 
 	for {
-		readSize, err := input.Read(plainText)
+		readSize, err := io.ReadFull(encrypter.Reader, plainText)
 		if err == io.EOF {
 			break
-		} else if err != nil {
+		}
+
+		if err != io.ErrUnexpectedEOF && err != nil {
 			return fmt.Errorf("read plaintext data: %w", err)
 		}
 
@@ -156,5 +151,54 @@ func (encrypter RaesEncrypter) Encrypt(input io.Reader) error {
 			return fmt.Errorf("write cipher block: %w", err)
 		}
 	}
+	return nil
+}
+
+func (decrypter RaesDecrypter) Read() ([]byte, error) {
+	var nonce = make([]byte, aesNonceSize)
+	var ciphertext = make([]byte, aesCipherTextSize + aesTagSize)
+
+	readedNonceSize, err := io.ReadFull(decrypter.Reader, nonce)
+	if err == io.EOF {
+		return nil, err
+	}
+
+	if err != io.ErrUnexpectedEOF && err != nil {
+		return nil, fmt.Errorf("read nonce: %w", err)
+	}
+
+	readedCipherSize, err := io.ReadFull(decrypter.Reader, ciphertext)
+	if err == io.EOF {
+		return nil, err
+	}
+
+	if err != io.ErrUnexpectedEOF && err != nil {
+		return nil, fmt.Errorf("read ciphertext: %w", err)
+	}
+
+	plaintext, err := decrypter.AEAD.Open(nil, nonce[:readedNonceSize], ciphertext[:readedCipherSize], nil)
+	if err != nil {
+		return nil, fmt.Errorf("decrypt ciphertext: %w", err)
+	}
+
+	return plaintext, nil
+}
+func (decrypter RaesDecrypter) Decrypte() error {
+	for {
+		plaintext, err := decrypter.Read()
+		if err == io.EOF {
+			break
+		}
+
+		if err != io.ErrUnexpectedEOF && err != nil {
+			return fmt.Errorf("read plaintext: %w", err)
+		}
+
+		_, err = decrypter.Writer.Write(plaintext)
+		if err != nil{
+			return err
+		}
+	}
+
 	return nil
 }

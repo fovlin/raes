@@ -11,34 +11,37 @@ import (
 	"log"
 	"os"
 	"path"
+	"strings"
 )
 
 type RaesEncrypter struct {
-	Writer       io.Writer
-	AEAD         cipher.AEAD
-	RsaPublicKey *rsa.PublicKey
-	BlockSize    uint32
-	NonceSize    uint32
+	Reader        io.Reader
+	Writer        io.Writer
+	AEAD          cipher.AEAD
+	RsaPublicKey  *rsa.PublicKey
+	AESCipherSize uint32
+	AESNonceSize  uint32
 }
 
 type RaesDecrypter struct {
-	Writer       io.Writer
-	AEAD         cipher.AEAD
+	Reader        io.Reader
+	Writer        io.Writer
+	AEAD          cipher.AEAD
 	RsaPrivateKey *rsa.PrivateKey
-	BlockSize    uint32
-	NonceSize    uint32
+	AESCipherSize uint32
+	AESNonceSize  uint32
 }
 
 type CipherTextBlock struct {
-	NonceSizeData []byte
-	Nonce         []byte
-	CipherText    []byte
+	Nonce      []byte
+	CipherText []byte
 }
 
 var (
 	cmdMap = map[string]func() error{
 		"gen-key": genKey,
 		"enc":     enc,
+		"dec":     dec,
 	}
 
 	args       []string
@@ -55,15 +58,18 @@ var (
 	keyType    string = "PRIVATE KEY"
 	keyDirName        = ".raes"
 
-	rsaKeySize int    = 4096
-	aesKeySize int    = 256 / 8
+	rsaKeySize       int = 4096
+	aesKeySize       int = 256 / 8
+	aesKeyCipherSize int = rsaKeySize / 8
 
-	nonceSize  uint32 = 12
-	aesBlockSize uint32 = 1024 * 32
+	aesNonceSize      uint32 = 12
+	aesCipherTextSize uint32 = 1024 * 32
 
-	nonceSizeDataSize uint32 = 4
-	blockSizeDataSize uint32 = 4
+	aesNonceSizeDataSize uint32 = 4
+	aesBlockSizeDataSize uint32 = 4
 )
+
+const aesTagSize = 16
 
 func main() {
 	err := initProgram()
@@ -105,15 +111,14 @@ func enc() error {
 		return fmt.Errorf("load public key: %w", err)
 	}
 
-	aesKey := make([]byte, aesKeySize)
-	_, err = rand.Reader.Read(aesKey)
-	if err != nil {
-		return fmt.Errorf("create aes key: %w", err)
-	}
-
 	input, err := os.Open(inputPath)
 	if err != nil {
 		return fmt.Errorf("open input file: %w", err)
+	}
+
+	outputPath, err = addSubfixBeforeExt(outputPath)
+	if err != nil {
+		return fmt.Errorf("add subfix: %w", err)
 	}
 
 	output, err := os.Create(outputPath)
@@ -121,12 +126,15 @@ func enc() error {
 		return fmt.Errorf("open input file: %w", err)
 	}
 
-	raesEncrypter, err := newRaesEncrypter(output, rsaPublicKey, aesKey)
+	raesEncrypter, err := newRaesEncrypter(input, output, rsaPublicKey)
 	if err != nil {
 		return fmt.Errorf("create raes encrypter: %w", err)
 	}
 
-	raesEncrypter.Encrypt(input)
+	err = raesEncrypter.Encrypt()
+	if err != nil {
+		return fmt.Errorf("encrypt: %w", err)
+	}
 
 	defer input.Close()
 	defer output.Close()
@@ -144,6 +152,7 @@ func genKey() error {
 		}
 
 	case !os.IsNotExist(err):
+		fmt.Println("private key exists, will regenerate public key")
 		privateKey, err := loadPrivateKey()
 		if err != nil {
 			return fmt.Errorf("load private key: %w", err)
@@ -155,7 +164,12 @@ func genKey() error {
 		}
 
 		initDir(path.Dir(publicKeyPath))
-		os.WriteFile(publicKeyPath, pem.EncodeToMemory(&pemBlock), 0600)
+		err = os.WriteFile(publicKeyPath, pem.EncodeToMemory(&pemBlock), 0600)
+		if err != nil {
+			return fmt.Errorf("save public key: %w", err)
+		}
+		
+		fmt.Println("regenerated public key:", publicKeyPath)
 	}
 
 	return nil
@@ -181,4 +195,48 @@ func createKey(keySize int, keyType string) ([]byte, []byte, error) {
 	}
 
 	return pem.EncodeToMemory(&pemPriBlock), pem.EncodeToMemory(&pemPubBlock), nil
+}
+
+func dec() error {
+	if len(subCmdArgs) < 1 {
+		return fmt.Errorf("usage: raes enc <input> [output]")
+	}
+
+	var inputPath string = subCmdArgs[0]
+	outputPath, _ := strings.CutSuffix(inputPath, ".enc")
+
+	if len(subCmdArgs) > 1 {
+		outputPath = subCmdArgs[1]
+	}
+
+	rsaPrivateKey, err := loadPrivateKey()
+	if err != nil {
+		return fmt.Errorf("load public key: %w", err)
+	}
+
+	input, err := os.Open(inputPath)
+	if err != nil {
+		return fmt.Errorf("open input file: %w", err)
+	}
+
+	outputPath, err = addSubfixBeforeExt(outputPath)
+	if err != nil {
+		return fmt.Errorf("add subfix: %w", err)
+	}
+
+	output, err := os.Create(outputPath)
+	if err != nil {
+		return fmt.Errorf("open input file: %w", err)
+	}
+
+	raesDecrypter, err := newRaesDecrypter(input, output, rsaPrivateKey)
+	if err != nil {
+		return fmt.Errorf("create decrypter: %w", err)
+	}
+
+	err = raesDecrypter.Decrypte()
+	if err != nil {
+		return err
+	}
+	return nil
 }
