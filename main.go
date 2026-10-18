@@ -7,6 +7,7 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
+	"hash"
 	"io"
 	"log"
 	"os"
@@ -21,6 +22,7 @@ type RaesEncrypter struct {
 	RsaPublicKey  *rsa.PublicKey
 	AESCipherSize uint32
 	AESNonceSize  uint32
+	SHA256        hash.Hash
 }
 
 type RaesDecrypter struct {
@@ -30,6 +32,8 @@ type RaesDecrypter struct {
 	RsaPrivateKey *rsa.PrivateKey
 	AESCipherSize uint32
 	AESNonceSize  uint32
+	SHA256        hash.Hash
+	OriginHash    []byte
 }
 
 type CipherTextBlock struct {
@@ -61,12 +65,9 @@ var (
 	rsaKeySize       int = 4096
 	aesKeySize       int = 256 / 8
 	aesKeyCipherSize int = rsaKeySize / 8
-
 	aesNonceSize      uint32 = 12
 	aesCipherTextSize uint32 = 1024 * 32
-
-	aesNonceSizeDataSize uint32 = 4
-	aesBlockSizeDataSize uint32 = 4
+	hashSize          int = 32
 )
 
 const aesTagSize = 16
@@ -111,20 +112,22 @@ func enc() error {
 		return fmt.Errorf("load public key: %w", err)
 	}
 
-	input, err := os.Open(inputPath)
-	if err != nil {
-		return fmt.Errorf("open input file: %w", err)
-	}
-
 	outputPath, err = addSubfixBeforeExt(outputPath)
 	if err != nil {
 		return fmt.Errorf("add subfix: %w", err)
 	}
 
+	input, err := os.Open(inputPath)
+	if err != nil {
+		return fmt.Errorf("open input file: %w", err)
+	}
+	defer input.Close()
+
 	output, err := os.Create(outputPath)
 	if err != nil {
 		return fmt.Errorf("open input file: %w", err)
 	}
+	defer output.Close()
 
 	raesEncrypter, err := newRaesEncrypter(input, output, rsaPublicKey)
 	if err != nil {
@@ -136,8 +139,10 @@ func enc() error {
 		return fmt.Errorf("encrypt: %w", err)
 	}
 
-	defer input.Close()
-	defer output.Close()
+	err = writeHash(output, raesEncrypter.SHA256)
+	if err != nil {
+		return fmt.Errorf("write hash: %w", err)
+	}
 
 	return nil
 }
@@ -235,5 +240,11 @@ func dec() error {
 	if err != nil {
 		return err
 	}
+
+	err = authHash(raesDecrypter.SHA256, raesDecrypter.OriginHash)
+	if err != nil {
+		return fmt.Errorf("check integrity: %w", err)
+	}
+
 	return nil
 }

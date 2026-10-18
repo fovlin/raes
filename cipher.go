@@ -6,9 +6,11 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
-	"encoding/binary"
+	"encoding/hex"
 	"fmt"
+	"hash"
 	"io"
+	"os"
 )
 
 func newRaesEncrypter(reader io.Reader, writer io.Writer, rsaPublicKey *rsa.PublicKey) (RaesEncrypter, error) {
@@ -23,7 +25,7 @@ func newRaesEncrypter(reader io.Reader, writer io.Writer, rsaPublicKey *rsa.Publ
 		return RaesEncrypter{}, fmt.Errorf("encrypt aes key: %w", err)
 	}
 
-	writer.Write(aesKeyCipherText)
+	writer.Write(append(aesKeyCipherText, make([]byte, hashSize)...))
 
 	aesBlock, err := aes.NewCipher(aesKey)
 	if err != nil {
@@ -42,17 +44,21 @@ func newRaesEncrypter(reader io.Reader, writer io.Writer, rsaPublicKey *rsa.Publ
 		RsaPublicKey:  rsaPublicKey,
 		AESCipherSize: aesCipherTextSize,
 		AESNonceSize:  aesNonceSize,
+		SHA256:        sha256.New(),
 	}
 
 	return raesEncrypter, nil
 }
 
 func newRaesDecrypter(reader io.Reader, writer io.Writer, rsaPrivateKey *rsa.PrivateKey) (RaesDecrypter, error) {
-	aesKeyCipher := make([]byte, aesKeyCipherSize)
-	_, err := io.ReadFull(reader, aesKeyCipher)
+	header := make([]byte, aesKeyCipherSize + hashSize)
+	_, err := io.ReadFull(reader, header)
 	if err != nil {
 		return RaesDecrypter{}, fmt.Errorf("load aes key from file header: %w", err)
 	}
+
+	aesKeyCipher := header[:512]
+	originHash := header[512:]
 
 	aesKey, err := rsa.DecryptOAEP(sha256.New(), rand.Reader, rsaPrivateKey, aesKeyCipher, nil)
 	if err != nil {
@@ -72,6 +78,8 @@ func newRaesDecrypter(reader io.Reader, writer io.Writer, rsaPrivateKey *rsa.Pri
 		RsaPrivateKey: rsaPrivateKey,
 		AESCipherSize: aesCipherTextSize,
 		AESNonceSize:  aesNonceSize,
+		SHA256:        sha256.New(),
+		OriginHash:    originHash,
 	}
 
 	return raesDecrypter, nil
@@ -79,7 +87,6 @@ func newRaesDecrypter(reader io.Reader, writer io.Writer, rsaPrivateKey *rsa.Pri
 
 func createAESCipherBlock(aead cipher.AEAD, plainText []byte) (CipherTextBlock, error) {
 	var nonce []byte = make([]byte, aesNonceSize)
-	var nonceSizeData = make([]byte, aesNonceSizeDataSize)
 
 	_, err := rand.Reader.Read(nonce)
 	if err != nil {
@@ -87,8 +94,6 @@ func createAESCipherBlock(aead cipher.AEAD, plainText []byte) (CipherTextBlock, 
 	}
 
 	cipherText := aead.Seal(nil, nonce, plainText, nil)
-
-	binary.BigEndian.PutUint32(nonceSizeData, uint32(len(nonce)))
 
 	cipherTextBlock := CipherTextBlock{
 		Nonce:      nonce,
@@ -101,7 +106,6 @@ func createAESCipherBlock(aead cipher.AEAD, plainText []byte) (CipherTextBlock, 
 
 func (encrypter RaesEncrypter) Write(plainText []byte) (int, error) {
 	var cipherDataBlock []byte
-	var blockSizeData = make([]byte, aesBlockSizeDataSize)
 
 	cipherBlock, err := createAESCipherBlock(encrypter.AEAD, plainText)
 	if err != nil {
@@ -111,17 +115,14 @@ func (encrypter RaesEncrypter) Write(plainText []byte) (int, error) {
 	cipherDataBlock = append(cipherDataBlock, cipherBlock.Nonce...)
 	cipherDataBlock = append(cipherDataBlock, cipherBlock.CipherText...)
 
-	blockSize := uint32(len(cipherDataBlock))
-	binary.BigEndian.PutUint32(blockSizeData, blockSize)
-
 	return encrypter.Writer.Write(cipherDataBlock)
 }
 
 func (encrypter RaesEncrypter) Encrypt() error {
-	var plainText []byte = make([]byte, encrypter.AESCipherSize)
+	var plaintext []byte = make([]byte, encrypter.AESCipherSize)
 
 	for {
-		readSize, err := io.ReadFull(encrypter.Reader, plainText)
+		readSize, err := io.ReadFull(encrypter.Reader, plaintext)
 		if err == io.EOF {
 			break
 		}
@@ -130,11 +131,17 @@ func (encrypter RaesEncrypter) Encrypt() error {
 			return fmt.Errorf("read plaintext data: %w", err)
 		}
 
-		_, err = encrypter.Write(plainText[:readSize])
+		_, err = encrypter.Write(plaintext[:readSize])
 		if err != nil {
 			return fmt.Errorf("write cipher block: %w", err)
 		}
+
+		_, err = encrypter.SHA256.Write(plaintext[:readSize])
+		if err != nil {
+			return fmt.Errorf("hash writer: %w", err)
+		}
 	}
+
 	return nil
 }
 
@@ -182,6 +189,29 @@ func (decrypter RaesDecrypter) Decrypte() error {
 		if err != nil{
 			return err
 		}
+
+		_, err = decrypter.SHA256.Write(plaintext)
+		if err != nil {
+			return fmt.Errorf("hash writer: %w", err)
+		}
+	}
+
+	return nil
+}
+
+func writeHash(file *os.File, hashData hash.Hash) error {
+	_, err := file.Seek(int64(rsaKeySize / 8), 0)
+	if err != nil {
+		return fmt.Errorf("auth hash: %w", err)
+	}
+	file.Write(hashData.Sum(nil))
+	return nil
+}
+
+
+func authHash(hashData hash.Hash, originHash []byte) error {
+	if hex.EncodeToString(originHash) != hex.EncodeToString(hashData.Sum(nil)) {
+		return fmt.Errorf("auth hash: integrity check error, the file may have been altered")
 	}
 
 	return nil
