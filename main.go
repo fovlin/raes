@@ -152,7 +152,6 @@ func genKey() error {
 		}
 
 	case !os.IsNotExist(err):
-		fmt.Println("private key exists, will regenerate public key")
 		privateKey, err := loadPrivateKey()
 		if err != nil {
 			return fmt.Errorf("load private key: %w", err)
@@ -168,8 +167,6 @@ func genKey() error {
 		if err != nil {
 			return fmt.Errorf("save public key: %w", err)
 		}
-
-		fmt.Println("regenerated public key:", publicKeyPath)
 	}
 
 	return nil
