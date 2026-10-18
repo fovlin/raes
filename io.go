@@ -1,11 +1,7 @@
 package main
 
 import (
-	"crypto/aes"
-	"crypto/cipher"
-	"crypto/rand"
 	"crypto/rsa"
-	"crypto/sha256"
 	"crypto/x509"
 	"encoding/binary"
 	"encoding/pem"
@@ -119,40 +115,34 @@ func addSubfixBeforeExt(outputPath string) (string, error) {
 	return resultPath, nil
 }
 
-func (cipherBlock CipherTextBlock) Write(writer io.Writer) (int, error) {
+func (encrypter RaesEncrypter) Write(plainText []byte) (int, error) {
 	var blockData []byte
-	var blockSizeData []byte
+	var blockSizeData = make([]byte, blockSizeDataSize)
+
+	cipherBlock, err := createAESCipherBlock(encrypter.AEAD, plainText)
+	if err != nil {
+		return 0, fmt.Errorf("encrypt data: %w", err)
+	}
 
 	blockData = append(blockData, cipherBlock.NonceSizeData...)
 	blockData = append(blockData, cipherBlock.Nonce...)
 	blockData = append(blockData, cipherBlock.CipherText...)
 
-	blockSize := nonceSize + uint32(len(blockData))
+	blockSize := uint32(len(blockData))
 	binary.BigEndian.PutUint32(blockSizeData, blockSize)
 
-	_, err := writer.Write(blockSizeData)
+	fmt.Println(blockSize)
+	_, err = encrypter.Writer.Write(blockSizeData)
 	if err != nil {
 		return 0, fmt.Errorf("write block size data: %w", err)
 	}
 
-	return writer.Write(blockData)
+	return encrypter.Writer.Write(blockData)
 }
 
-func (encrypter RaesEncrypter) Encrypt(input io.Reader, output io.Writer) error {
-	aesKeyCipher, err := rsa.EncryptOAEP(sha256.New(), rand.Reader, encrypter.RsaPublicKey, encrypter.AesKey, nil)
-	if err != nil {
-		return fmt.Errorf("encrypt aes key: %w", err)
-	}
-
-	output.Write(aesKeyCipher)
-
-	aesBlock, err := aes.NewCipher(encrypter.AesKey)
-	aead, err := cipher.NewGCM(aesBlock)
-	if err != nil {
-		return fmt.Errorf("create aes cipher: %w", err)
-	}
-
+func (encrypter RaesEncrypter) Encrypt(input io.Reader) error {
 	var plainText []byte = make([]byte, encrypter.BlockSize)
+
 	for {
 		readSize, err := input.Read(plainText)
 		if err == io.EOF {
@@ -161,12 +151,7 @@ func (encrypter RaesEncrypter) Encrypt(input io.Reader, output io.Writer) error 
 			return fmt.Errorf("read plaintext data: %w", err)
 		}
 
-		cipherBlock, err := blockCrypt(aead, plainText[:readSize])
-		if err != nil {
-			return fmt.Errorf("encrypt data: %w", err)
-		}
-
-		_, err = cipherBlock.Write(output)
+		_, err = encrypter.Write(plainText[:readSize])
 		if err != nil {
 			return fmt.Errorf("write cipher block: %w", err)
 		}

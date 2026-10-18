@@ -1,21 +1,32 @@
 package main
 
 import (
+	"crypto/cipher"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"path"
 )
 
 type RaesEncrypter struct {
-	AesKey       []byte
+	Writer       io.Writer
+	AEAD         cipher.AEAD
 	RsaPublicKey *rsa.PublicKey
-	BlockSize    int
-	NonceSize    int
+	BlockSize    uint32
+	NonceSize    uint32
+}
+
+type RaesDecrypter struct {
+	Writer       io.Writer
+	AEAD         cipher.AEAD
+	RsaPrivateKey *rsa.PrivateKey
+	BlockSize    uint32
+	NonceSize    uint32
 }
 
 type CipherTextBlock struct {
@@ -45,8 +56,10 @@ var (
 	keyDirName        = ".raes"
 
 	rsaKeySize int    = 4096
-	nonceSize  uint32 = 12
 	aesKeySize int    = 256 / 8
+
+	nonceSize  uint32 = 12
+	aesBlockSize uint32 = 1024 * 32
 
 	nonceSizeDataSize uint32 = 4
 	blockSizeDataSize uint32 = 4
@@ -108,8 +121,12 @@ func enc() error {
 		return fmt.Errorf("open input file: %w", err)
 	}
 
-	raesEncrypter := newRaesEncrypter(rsaPublicKey, aesKey)
-	raesEncrypter.Encrypt(input, output)
+	raesEncrypter, err := newRaesEncrypter(output, rsaPublicKey, aesKey)
+	if err != nil {
+		return fmt.Errorf("create raes encrypter: %w", err)
+	}
+
+	raesEncrypter.Encrypt(input)
 
 	defer input.Close()
 	defer output.Close()
