@@ -46,7 +46,6 @@ func initDir(dirPath string) error {
 
 func initFlag() {
 	flag.StringVar(&keyType, "type", keyType, "key type")
-	flag.IntVar(&rsaKeySize, "size", rsaKeySize, "key size")
 	flag.StringVar(&privateKeyPath, "private", privateKeyPath, "private key file (default "+privateKeyPath+")")
 	flag.StringVar(&publicKeyPath, "public", publicKeyPath, "public key file (default "+publicKeyPath+")")
 	flag.Parse()

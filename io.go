@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
@@ -82,4 +83,27 @@ func createAngSaveKey() error {
 	}
 
 	return nil
+}
+
+
+func createKey(keySize int, keyType string) ([]byte, []byte, error) {
+	privateKey, err := rsa.GenerateKey(rand.Reader, keySize)
+	if err != nil {
+		return nil, nil, fmt.Errorf("generate rsa key: %w", err)
+	}
+
+	privateKeyData := x509.MarshalPKCS1PrivateKey(privateKey)
+	publicKeyData := x509.MarshalPKCS1PublicKey(&privateKey.PublicKey)
+
+	pemPriBlock := pem.Block{
+		Type:  keyType,
+		Bytes: privateKeyData,
+	}
+
+	pemPubBlock := pem.Block{
+		Type:  keyType,
+		Bytes: publicKeyData,
+	}
+
+	return pem.EncodeToMemory(&pemPriBlock), pem.EncodeToMemory(&pemPubBlock), nil
 }

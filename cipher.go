@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
@@ -25,7 +26,10 @@ func newRaesEncrypter(reader io.Reader, writer io.Writer, rsaPublicKey *rsa.Publ
 		return RaesEncrypter{}, fmt.Errorf("encrypt aes key: %w", err)
 	}
 
-	writer.Write(append(aesKeyCipherText, make([]byte, hashSize)...))
+	_, err = writer.Write(bytes.Join([][]byte{encFileHeader, aesKeyCipherText, make([]byte, hashSize)}, nil))
+	if err != nil {
+		return RaesEncrypter{}, fmt.Errorf("write header: %w", err)
+	}
 
 	aesBlock, err := aes.NewCipher(aesKey)
 	if err != nil {
@@ -51,16 +55,20 @@ func newRaesEncrypter(reader io.Reader, writer io.Writer, rsaPublicKey *rsa.Publ
 }
 
 func newRaesDecrypter(reader io.Reader, writer io.Writer, rsaPrivateKey *rsa.PrivateKey) (RaesDecrypter, error) {
-	header := make([]byte, aesKeyCipherSize + hashSize)
+	header := make([]byte, len(encFileHeader)+aesKeyCiphertextSize+hashSize)
 	_, err := io.ReadFull(reader, header)
 	if err != nil {
 		return RaesDecrypter{}, fmt.Errorf("load aes key from file header: %w", err)
 	}
 
-	aesKeyCipher := header[:512]
-	originHash := header[512:]
+	aesKeyCiphertext := header[len(encFileHeader) : len(encFileHeader)+aesKeyCiphertextSize]
+	originHash := header[len(encFileHeader)+aesKeyCiphertextSize:]
 
-	aesKey, err := rsa.DecryptOAEP(sha256.New(), rand.Reader, rsaPrivateKey, aesKeyCipher, nil)
+	if hex.EncodeToString(header[:len(encFileHeader)]) != hex.EncodeToString(encFileHeader) {
+		return RaesDecrypter{}, fmt.Errorf("check header: not a ciphertext file")
+	}
+
+	aesKey, err := rsa.DecryptOAEP(sha256.New(), rand.Reader, rsaPrivateKey, aesKeyCiphertext, nil)
 	if err != nil {
 		return RaesDecrypter{}, fmt.Errorf("decrypt aes key: %w", err)
 	}
@@ -102,7 +110,6 @@ func createAESCipherBlock(aead cipher.AEAD, plainText []byte) (CipherTextBlock, 
 
 	return cipherTextBlock, nil
 }
-
 
 func (encrypter RaesEncrypter) Write(plainText []byte) (int, error) {
 	var cipherDataBlock []byte
@@ -147,7 +154,7 @@ func (encrypter RaesEncrypter) Encrypt() error {
 
 func (decrypter RaesDecrypter) Read() ([]byte, error) {
 	var nonce = make([]byte, aesNonceSize)
-	var ciphertext = make([]byte, aesCipherTextSize + aesTagSize)
+	var ciphertext = make([]byte, aesCipherTextSize+aesTagSize)
 
 	readedNonceSize, err := io.ReadFull(decrypter.Reader, nonce)
 	if err == io.EOF {
@@ -186,7 +193,7 @@ func (decrypter RaesDecrypter) Decrypte() error {
 		}
 
 		_, err = decrypter.Writer.Write(plaintext)
-		if err != nil{
+		if err != nil {
 			return err
 		}
 
@@ -200,14 +207,13 @@ func (decrypter RaesDecrypter) Decrypte() error {
 }
 
 func writeHash(file *os.File, hashData hash.Hash) error {
-	_, err := file.Seek(int64(rsaKeySize / 8), 0)
+	_, err := file.Seek(int64(len(encFileHeader) + aesKeyCiphertextSize), 0)
 	if err != nil {
 		return fmt.Errorf("auth hash: %w", err)
 	}
 	file.Write(hashData.Sum(nil))
 	return nil
 }
-
 
 func authHash(hashData hash.Hash, originHash []byte) error {
 	if hex.EncodeToString(originHash) != hex.EncodeToString(hashData.Sum(nil)) {

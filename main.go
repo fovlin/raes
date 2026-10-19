@@ -2,7 +2,6 @@ package main
 
 import (
 	"crypto/cipher"
-	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
@@ -59,15 +58,16 @@ var (
 	privateKeyPath string
 	publicKeyPath  string
 
-	keyType    string = "PRIVATE KEY"
-	keyDirName        = ".raes"
+	encFileHeader []byte = []byte("RAESCIPHERTEXT")
+	keyType       string = "PRIVATE KEY"
+	keyDirName           = ".raes"
 
-	rsaKeySize       int = 4096
-	aesKeySize       int = 256 / 8
-	aesKeyCipherSize int = rsaKeySize / 8
-	aesNonceSize      uint32 = 12
-	aesCipherTextSize uint32 = 1024 * 32
-	hashSize          int = 32
+	rsaKeySize           int    = 4096
+	aesKeySize           int    = 256 / 8
+	aesKeyCiphertextSize int    = rsaKeySize / 8
+	aesNonceSize         uint32 = 12
+	aesCipherTextSize    uint32 = 1024 * 32
+	hashSize             int    = 32
 )
 
 const aesTagSize = 16
@@ -107,14 +107,14 @@ func enc() error {
 		outputPath = subCmdArgs[1]
 	}
 
+	outputPath, err := addSubfixBeforeExt(outputPath)
+	if err != nil {
+		return fmt.Errorf("add subfix: %w", err)
+	}
+
 	rsaPublicKey, err := loadPublicKey()
 	if err != nil {
 		return fmt.Errorf("load public key: %w", err)
-	}
-
-	outputPath, err = addSubfixBeforeExt(outputPath)
-	if err != nil {
-		return fmt.Errorf("add subfix: %w", err)
 	}
 
 	input, err := os.Open(inputPath)
@@ -167,7 +167,10 @@ func genKey() error {
 			Type:  keyType,
 		}
 
-		initDir(path.Dir(publicKeyPath))
+		err = initDir(path.Dir(publicKeyPath))
+		if err != nil {
+			return fmt.Errorf("create public directory: %w", err)
+		}
 		err = os.WriteFile(publicKeyPath, pem.EncodeToMemory(&pemBlock), 0600)
 		if err != nil {
 			return fmt.Errorf("save public key: %w", err)
@@ -175,28 +178,6 @@ func genKey() error {
 	}
 
 	return nil
-}
-
-func createKey(keySize int, keyType string) ([]byte, []byte, error) {
-	privateKey, err := rsa.GenerateKey(rand.Reader, keySize)
-	if err != nil {
-		return nil, nil, fmt.Errorf("generate rsa key: %w", err)
-	}
-
-	privateKeyData := x509.MarshalPKCS1PrivateKey(privateKey)
-	publicKeyData := x509.MarshalPKCS1PublicKey(&privateKey.PublicKey)
-
-	pemPriBlock := pem.Block{
-		Type:  keyType,
-		Bytes: privateKeyData,
-	}
-
-	pemPubBlock := pem.Block{
-		Type:  keyType,
-		Bytes: publicKeyData,
-	}
-
-	return pem.EncodeToMemory(&pemPriBlock), pem.EncodeToMemory(&pemPubBlock), nil
 }
 
 func dec() error {
