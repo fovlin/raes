@@ -59,7 +59,7 @@ var (
 	publicKeyPath  string
 
 	encFileHeader []byte = []byte("RAESCIPHERTEXT")
-	keyType       string = "PRIVATE KEY"
+	keyType       string = "RAES PRIVATE KEY"
 	keyDirName           = ".raes"
 
 	rsaKeySize           int    = 4096
