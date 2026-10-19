@@ -67,7 +67,7 @@ func loadPrivateKey() (*rsa.PrivateKey, error) {
 }
 
 func createAngSaveKey() error {
-	privateKeyData, publicKeyData, err := createKey(rsaKeySize, keyType)
+	privateKeyData, publicKeyData, err := createKey(rsaKeyBits, keyType)
 	if err != nil {
 		return fmt.Errorf("create new key: %v", err)
 	}
@@ -84,7 +84,6 @@ func createAngSaveKey() error {
 
 	return nil
 }
-
 
 func createKey(keySize int, keyType string) ([]byte, []byte, error) {
 	privateKey, err := rsa.GenerateKey(rand.Reader, keySize)

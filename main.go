@@ -62,9 +62,9 @@ var (
 	keyType       string = "RAES PRIVATE KEY"
 	keyDirName           = ".raes"
 
-	rsaKeySize           int    = 4096
+	rsaKeyBits           int    = 4096
 	aesKeySize           int    = 256 / 8
-	aesKeyCiphertextSize int    = rsaKeySize / 8
+	aesKeyCiphertextSize int    = rsaKeyBits / 8
 	aesNonceSize         uint32 = 12
 	aesCipherTextSize    uint32 = 1024 * 32
 	hashSize             int    = 32
