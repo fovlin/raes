@@ -1,8 +1,8 @@
 package main
 
 import (
-	"flag"
 	"fmt"
+	"github.com/fovlin/opt"
 	"os"
 	"path"
 	"strings"
@@ -15,12 +15,10 @@ func initProgram() error {
 	}
 
 	initFlag()
-	args = flag.Args()
+	args = opt.Args()
 	if len(args) > 1 {
 		subCmdArgs = args[1:]
 	}
-
-	args = flag.Args()
 
 	return nil
 }
@@ -45,10 +43,10 @@ func initDir(dirPath string) error {
 }
 
 func initFlag() {
-	flag.StringVar(&keyType, "type", keyType, "key type")
-	flag.StringVar(&privateKeyPath, "private", privateKeyPath, "private key file (default "+privateKeyPath+")")
-	flag.StringVar(&publicKeyPath, "public", publicKeyPath, "public key file (default "+publicKeyPath+")")
-	flag.Parse()
+	opt.StringVar(&keyType, "t", "type", keyType)
+	opt.StringVar(&privateKeyPath, "i", "private-key", privateKeyPath)
+	opt.StringVar(&publicKeyPath, "p", "public-key", publicKeyPath)
+	opt.Parse()
 }
 
 func initValue() error {
@@ -69,7 +67,6 @@ func initValue() error {
 
 	return nil
 }
-
 
 func addSubfixBeforeExt(outputPath string) (string, error) {
 	resultPath := outputPath

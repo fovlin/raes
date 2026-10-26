@@ -19,25 +19,20 @@ type RaesEncrypter struct {
 	Writer        io.Writer
 	AEAD          cipher.AEAD
 	RsaPublicKey  *rsa.PublicKey
-	AESCipherSize uint32
-	AESNonceSize  uint32
+	AESCipherSize int
+	AESNonceSize  int
 	SHA256        hash.Hash
 }
 
 type RaesDecrypter struct {
-	Reader        io.Reader
-	Writer        io.Writer
-	AEAD          cipher.AEAD
-	RsaPrivateKey *rsa.PrivateKey
-	AESCipherSize uint32
-	AESNonceSize  uint32
-	SHA256        hash.Hash
-	OriginHash    []byte
-}
-
-type CipherTextBlock struct {
-	Nonce      []byte
-	CipherText []byte
+	Reader               io.Reader
+	Writer               io.Writer
+	AEAD                 cipher.AEAD
+	RsaPrivateKey        *rsa.PrivateKey
+	AESCipherSize        int
+	AESNonceSize         int
+	SHA256               hash.Hash
+	OriginHashCiphertext []byte
 }
 
 var (
@@ -62,12 +57,12 @@ var (
 	keyType       string = "RAES PRIVATE KEY"
 	keyDirName           = ".raes"
 
-	rsaKeyBits           int    = 4096
-	aesKeySize           int    = 256 / 8
-	aesKeyCiphertextSize int    = rsaKeyBits / 8
-	aesNonceSize         uint32 = 12
-	aesCipherTextSize    uint32 = 1024 * 32
-	hashSize             int    = 32
+	rsaKeyBits           int = 4096
+	aesKeySize           int = 256 / 8
+	aesKeyCiphertextSize int = rsaKeyBits / 8
+	aesNonceSize         int = 12
+	aesCipherTextSize    int = 1024 * 32
+	hashCiphertextSize   int = 32 + aesNonceSize + aesTagSize
 )
 
 const aesTagSize = 16
@@ -139,7 +134,7 @@ func enc() error {
 		return fmt.Errorf("encrypt: %w", err)
 	}
 
-	err = writeHash(output, raesEncrypter.SHA256)
+	err = raesEncrypter.WriteHash()
 	if err != nil {
 		return fmt.Errorf("write hash: %w", err)
 	}
@@ -222,7 +217,7 @@ func dec() error {
 		return err
 	}
 
-	err = authHash(raesDecrypter.SHA256, raesDecrypter.OriginHash)
+	err = raesDecrypter.AuthHash()
 	if err != nil {
 		return fmt.Errorf("check integrity: %w", err)
 	}
