@@ -57,7 +57,6 @@ func newRaesDecrypter(reader io.Reader, writer io.Writer, rsaPrivateKey *rsa.Pri
 	header := make([]byte, len(encFileHeader)+aesKeyCiphertextSize+hashCiphertextSize)
 	readedHeaderSize, err := io.ReadFull(reader, header)
 	if err != nil {
-		fmt.Println(readedHeaderSize)
 		return RaesDecrypter{}, fmt.Errorf("load file header: %w", err)
 	}
 

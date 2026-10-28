@@ -124,52 +124,30 @@ func enc() error {
 	}
 	defer output.Close()
 
-	raesEncrypter, err := newRaesEncrypter(input, output, rsaPublicKey)
+	err = func() error {
+		raesEncrypter, err := newRaesEncrypter(input, output, rsaPublicKey)
+		if err != nil {
+			return fmt.Errorf("create raes encrypter: %w", err)
+		}
+
+		err = raesEncrypter.Encrypt()
+		if err != nil {
+			return fmt.Errorf("encrypt: %w", err)
+		}
+
+		err = raesEncrypter.WriteHash()
+		if err != nil {
+			return fmt.Errorf("write hash: %w", err)
+		}
+
+		return nil
+	}()
+
 	if err != nil {
-		return fmt.Errorf("create raes encrypter: %w", err)
-	}
-
-	err = raesEncrypter.Encrypt()
-	if err != nil {
-		return fmt.Errorf("encrypt: %w", err)
-	}
-
-	err = raesEncrypter.WriteHash()
-	if err != nil {
-		return fmt.Errorf("write hash: %w", err)
-	}
-
-	return nil
-}
-
-func genKey() error {
-	_, err := os.Stat(privateKeyPath)
-	switch true {
-	case os.IsNotExist(err):
-		err := createAngSaveKey()
-		if err != nil {
-			return fmt.Errorf("create key: %w", err)
+		if err := os.Remove(output.Name()); err != nil {
+			return fmt.Errorf("remove damage file: %w", err)
 		}
-
-	case !os.IsNotExist(err):
-		privateKey, err := loadPrivateKey()
-		if err != nil {
-			return fmt.Errorf("load private key: %w", err)
-		}
-
-		pemBlock := pem.Block{
-			Bytes: x509.MarshalPKCS1PublicKey(&privateKey.PublicKey),
-			Type:  keyType,
-		}
-
-		err = initDir(path.Dir(publicKeyPath))
-		if err != nil {
-			return fmt.Errorf("create public directory: %w", err)
-		}
-		err = os.WriteFile(publicKeyPath, pem.EncodeToMemory(&pemBlock), 0600)
-		if err != nil {
-			return fmt.Errorf("save public key: %w", err)
-		}
+		return err
 	}
 
 	return nil
@@ -207,19 +185,63 @@ func dec() error {
 		return fmt.Errorf("open input file: %w", err)
 	}
 
-	raesDecrypter, err := newRaesDecrypter(input, output, rsaPrivateKey)
-	if err != nil {
-		return fmt.Errorf("create decrypter: %w", err)
-	}
+	err = func() error {
+		raesDecrypter, err := newRaesDecrypter(input, output, rsaPrivateKey)
+		if err != nil {
+			return fmt.Errorf("create decrypter: %w", err)
+		}
 
-	err = raesDecrypter.Decrypte()
+		err = raesDecrypter.Decrypte()
+		if err != nil {
+			return err
+		}
+
+		err = raesDecrypter.AuthHash()
+		if err != nil {
+			return fmt.Errorf("check integrity: %w", err)
+		}
+
+		return nil
+	}()
+
 	if err != nil {
+		if err := os.Remove(output.Name()); err != nil {
+			return fmt.Errorf("remove damage file: %w", err)
+		}
 		return err
 	}
 
-	err = raesDecrypter.AuthHash()
-	if err != nil {
-		return fmt.Errorf("check integrity: %w", err)
+	return nil
+}
+
+func genKey() error {
+	_, err := os.Stat(privateKeyPath)
+	switch true {
+	case os.IsNotExist(err):
+		err := createAngSaveKey()
+		if err != nil {
+			return fmt.Errorf("create key: %w", err)
+		}
+
+	case !os.IsNotExist(err):
+		privateKey, err := loadPrivateKey()
+		if err != nil {
+			return fmt.Errorf("load private key: %w", err)
+		}
+
+		pemBlock := pem.Block{
+			Bytes: x509.MarshalPKCS1PublicKey(&privateKey.PublicKey),
+			Type:  keyType,
+		}
+
+		err = initDir(path.Dir(publicKeyPath))
+		if err != nil {
+			return fmt.Errorf("create public directory: %w", err)
+		}
+		err = os.WriteFile(publicKeyPath, pem.EncodeToMemory(&pemBlock), 0600)
+		if err != nil {
+			return fmt.Errorf("save public key: %w", err)
+		}
 	}
 
 	return nil
