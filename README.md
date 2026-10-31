@@ -14,6 +14,9 @@ go build .
 
 ```bash
 raes gen-key
+# generate a private key and public key on $HOME/.raes directory
+
 raes enc <file> [output]
+
 raes dec <encfile> [output]
 ```
