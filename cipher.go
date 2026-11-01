@@ -7,7 +7,6 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
@@ -15,7 +14,7 @@ import (
 
 func newRaesEncrypter(reader io.Reader, writer io.Writer, rsaPublicKey *rsa.PublicKey) (RaesEncrypter, error) {
 	aesKey := make([]byte, aesKeySize)
-	_, err := rand.Reader.Read(aesKey)
+	_, err := io.ReadFull(rand.Reader, aesKey)
 	if err != nil {
 		return RaesEncrypter{}, fmt.Errorf("create aes key: %w", err)
 	}
@@ -55,16 +54,16 @@ func newRaesEncrypter(reader io.Reader, writer io.Writer, rsaPublicKey *rsa.Publ
 
 func newRaesDecrypter(reader io.Reader, writer io.Writer, rsaPrivateKey *rsa.PrivateKey) (RaesDecrypter, error) {
 	header := make([]byte, len(encFileHeader)+aesKeyCiphertextSize+hashCiphertextSize)
-	readedHeaderSize, err := io.ReadFull(reader, header)
+	_, err := io.ReadFull(reader, header)
 	if err != nil {
 		return RaesDecrypter{}, fmt.Errorf("load file header: %w", err)
 	}
 
-	if readedHeaderSize < len(encFileHeader)+aesKeyCiphertextSize+hashCiphertextSize || hex.EncodeToString(header[:len(encFileHeader)]) != hex.EncodeToString(encFileHeader) {
+	if !bytes.Equal(header[:len(encFileHeader)], encFileHeader) {
 		return RaesDecrypter{}, fmt.Errorf("check header: not a ciphertext file")
 	}
 
-	aesKeyCiphertext := header[len(encFileHeader):len(encFileHeader)+aesKeyCiphertextSize]
+	aesKeyCiphertext := header[len(encFileHeader) : len(encFileHeader)+aesKeyCiphertextSize]
 	originHashCiphertext := header[len(encFileHeader)+aesKeyCiphertextSize:]
 
 	aesKey, err := rsa.DecryptOAEP(sha256.New(), rand.Reader, rsaPrivateKey, aesKeyCiphertext, nil)
@@ -73,6 +72,10 @@ func newRaesDecrypter(reader io.Reader, writer io.Writer, rsaPrivateKey *rsa.Pri
 	}
 
 	aesBlock, err := aes.NewCipher(aesKey)
+	if err != nil {
+		return RaesDecrypter{}, fmt.Errorf("create aes block: %w", err)
+	}
+
 	aead, err := cipher.NewGCM(aesBlock)
 	if err != nil {
 		return RaesDecrypter{}, fmt.Errorf("create aead: %w", err)
@@ -95,7 +98,7 @@ func newRaesDecrypter(reader io.Reader, writer io.Writer, rsaPrivateKey *rsa.Pri
 func (encrypter RaesEncrypter) AEADBlockEncrypt(plainText []byte) ([]byte, error) {
 	var nonce []byte = make([]byte, aesNonceSize)
 
-	_, err := rand.Reader.Read(nonce)
+	_, err := io.ReadFull(rand.Reader, nonce)
 	if err != nil {
 		return nil, fmt.Errorf("create nonce: %w", err)
 	}
@@ -153,7 +156,7 @@ func (decrypter RaesDecrypter) Read() ([]byte, error) {
 		return nil, err
 	}
 
-	if readedCipherSize < aesNonceSize {
+	if readedCipherSize < decrypter.AESNonceSize+aesTagSize {
 		return nil, fmt.Errorf("damaged ciphertext block")
 	}
 
@@ -200,7 +203,7 @@ func (encrypter RaesEncrypter) WriteHash() error {
 		return fmt.Errorf("encrypt hash: %w", err)
 	}
 
-	_, err = file.Seek(int64(len(encFileHeader)+aesKeyCiphertextSize), 0)
+	_, err = file.Seek(int64(len(encFileHeader)+aesKeyCiphertextSize), io.SeekStart)
 	if err != nil {
 		return err
 	}
@@ -217,7 +220,7 @@ func (decrypter RaesDecrypter) AuthHash() error {
 		return err
 	}
 
-	if hex.EncodeToString(originHash) != hex.EncodeToString(decrypter.SHA256.Sum(nil)) {
+	if !bytes.Equal(originHash, decrypter.SHA256.Sum(nil)) {
 		return fmt.Errorf("auth hash: integrity check error, the file may have been altered")
 	}
 

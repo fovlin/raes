@@ -44,9 +44,19 @@ func initDir(dirPath string) error {
 
 func initFlag() {
 	opt.StringVar(&keyType, "t", "type", keyType)
-	opt.StringVar(&privateKeyPath, "i", "private-key", privateKeyPath)
-	opt.StringVar(&publicKeyPath, "p", "public-key", publicKeyPath)
+	opt.StringVar(&privateKeyPathFlag, "i", "private-key", "")
+	opt.StringVar(&publicKeyPathFlag, "p", "public-key", "")
 	opt.Parse()
+
+	if privateKeyPathFlag != "" {
+		privateKeyPath = privateKeyPathFlag
+	}
+
+	if publicKeyPathFlag != "" {
+		publicKeyPath = publicKeyPathFlag
+	} else {
+		publicKeyPath = path.Join(path.Dir(privateKeyPath), publicKeyName)
+	}
 }
 
 func initValue() error {
@@ -68,30 +78,26 @@ func initValue() error {
 	return nil
 }
 
-func addSubfixBeforeExt(outputPath string) (string, error) {
-	resultPath := outputPath
+func uniqueOutputPath(outputPath string) (string, error) {
+	dir := path.Dir(outputPath)
+	basePath := path.Base(outputPath)
+	ext := path.Ext(basePath)
+	pureName := strings.TrimSuffix(basePath, ext)
 
-	for number := 1; number > 0; number++ {
-		_, err := os.Stat(resultPath)
+	for number := 0; ; number++ {
+		candidatePath := outputPath
+		if number > 0 {
+			candidatePath = path.Join(dir, fmt.Sprint(pureName, "-", number, ext))
+		}
+
+		_, err := os.Stat(candidatePath)
 
 		switch true {
 		case os.IsNotExist(err):
-			return resultPath, nil
+			return candidatePath, nil
 
 		case err != nil:
 			return "", err
 		}
-
-		resultPath = outputPath
-
-		dir := path.Dir(resultPath)
-		basePath := path.Base(resultPath)
-		ext := path.Ext(basePath)
-		pureName, _ := strings.CutSuffix(basePath, ext)
-		pureName += fmt.Sprint("-", number)
-
-		resultPath = path.Join(dir, fmt.Sprint(pureName, ext))
 	}
-
-	return resultPath, nil
 }

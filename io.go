@@ -7,28 +7,18 @@ import (
 	"encoding/pem"
 	"fmt"
 	"os"
-	"path"
 )
 
 func loadPublicKey() (*rsa.PublicKey, error) {
-	if len(publicKeyPathArg) == 0 {
-		homeDir, err := os.UserHomeDir()
-		if err != nil {
-			return nil, fmt.Errorf("load home dirctory: %w", err)
-		}
-		publicKeyPath = path.Join(homeDir, keyDirName, publicKeyName)
-	}
-
-	if len(publicKeyPathArg) != 0 {
-		publicKeyPath = publicKeyPathArg
-	}
-
 	publicKeyData, err := os.ReadFile(publicKeyPath)
 	if err != nil {
 		return nil, fmt.Errorf("read public key file: %w", err)
 	}
 
 	pemBlock, _ := pem.Decode(publicKeyData)
+	if pemBlock == nil {
+		return nil, fmt.Errorf("decode public key: no pem data found")
+	}
 
 	key, err := x509.ParsePKCS1PublicKey(pemBlock.Bytes)
 	if err != nil {
@@ -39,28 +29,19 @@ func loadPublicKey() (*rsa.PublicKey, error) {
 }
 
 func loadPrivateKey() (*rsa.PrivateKey, error) {
-	if len(privateKeyPathArg) == 0 {
-		homeDir, err := os.UserHomeDir()
-		if err != nil {
-			return nil, fmt.Errorf("load home dirctory: %w", err)
-		}
-		privateKeyPath = path.Join(homeDir, keyDirName, privatekeyName)
-	}
-
-	if len(privateKeyPathArg) != 0 {
-		privateKeyPath = privateKeyPathArg
-	}
-
 	privateKeyData, err := os.ReadFile(privateKeyPath)
 	if err != nil {
-		return nil, fmt.Errorf("read public key file: %w", err)
+		return nil, fmt.Errorf("read private key file: %w", err)
 	}
 
 	pemBlock, _ := pem.Decode(privateKeyData)
+	if pemBlock == nil {
+		return nil, fmt.Errorf("decode private key: no pem data found")
+	}
 
 	key, err := x509.ParsePKCS1PrivateKey(pemBlock.Bytes)
 	if err != nil {
-		return nil, fmt.Errorf("parse public key data: %w", err)
+		return nil, fmt.Errorf("parse private key data: %w", err)
 	}
 
 	return key, nil

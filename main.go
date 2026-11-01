@@ -45,8 +45,8 @@ var (
 	args       []string
 	subCmdArgs []string
 
-	privateKeyPathArg string
-	publicKeyPathArg  string
+	privateKeyPathFlag string
+	publicKeyPathFlag  string
 
 	privatekeyName string = "raes_key"
 	publicKeyName  string = "raes_key.pub"
@@ -102,9 +102,9 @@ func enc() error {
 		outputPath = subCmdArgs[1]
 	}
 
-	outputPath, err := addSubfixBeforeExt(outputPath)
+	outputPath, err := uniqueOutputPath(outputPath)
 	if err != nil {
-		return fmt.Errorf("add subfix: %w", err)
+		return fmt.Errorf("unique output path: %w", err)
 	}
 
 	rsaPublicKey, err := loadPublicKey()
@@ -120,7 +120,7 @@ func enc() error {
 
 	output, err := os.Create(outputPath)
 	if err != nil {
-		return fmt.Errorf("open input file: %w", err)
+		return fmt.Errorf("create output file: %w", err)
 	}
 	defer output.Close()
 
@@ -155,11 +155,14 @@ func enc() error {
 
 func dec() error {
 	if len(subCmdArgs) < 1 {
-		return fmt.Errorf("usage: raes enc <input> [output]")
+		return fmt.Errorf("usage: raes dec <input> [output]")
 	}
 
 	var inputPath string = subCmdArgs[0]
-	outputPath, _ := strings.CutSuffix(inputPath, ".enc")
+	outputPath, ok := strings.CutSuffix(inputPath, ".enc")
+	if !ok {
+		outputPath = inputPath + ".dec"
+	}
 
 	if len(subCmdArgs) > 1 {
 		outputPath = subCmdArgs[1]
@@ -167,23 +170,25 @@ func dec() error {
 
 	rsaPrivateKey, err := loadPrivateKey()
 	if err != nil {
-		return fmt.Errorf("load public key: %w", err)
+		return fmt.Errorf("load private key: %w", err)
 	}
 
 	input, err := os.Open(inputPath)
 	if err != nil {
 		return fmt.Errorf("open input file: %w", err)
 	}
+	defer input.Close()
 
-	outputPath, err = addSubfixBeforeExt(outputPath)
+	outputPath, err = uniqueOutputPath(outputPath)
 	if err != nil {
-		return fmt.Errorf("add subfix: %w", err)
+		return fmt.Errorf("unique output path: %w", err)
 	}
 
 	output, err := os.Create(outputPath)
 	if err != nil {
-		return fmt.Errorf("open input file: %w", err)
+		return fmt.Errorf("create output file: %w", err)
 	}
+	defer output.Close()
 
 	err = func() error {
 		raesDecrypter, err := newRaesDecrypter(input, output, rsaPrivateKey)
