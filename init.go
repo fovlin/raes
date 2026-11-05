@@ -54,8 +54,6 @@ func initFlag() {
 
 	if publicKeyPathFlag != "" {
 		publicKeyPath = publicKeyPathFlag
-	} else {
-		publicKeyPath = path.Join(path.Dir(privateKeyPath), publicKeyName)
 	}
 }
 
@@ -73,7 +71,7 @@ func initValue() error {
 	}
 
 	privateKeyPath = path.Join(keyDir, privatekeyName)
-	publicKeyPath = path.Join(path.Dir(privateKeyPath), publicKeyName)
+	publicKeyPath = path.Join(keyDir, publicKeyName)
 
 	return nil
 }
